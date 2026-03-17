@@ -19,8 +19,8 @@
 // #include "../../backend/Module2_HoughLines/HoughLines.h"
 // #include "../../backend/Module3_HoughCircles/HoughCircles.h"
 // #include "../../backend/Module4_HoughEllipses/HoughEllipses.h"
-// #include "../../backend/Module5_ActiveContours/GreedySnake.h"
-// #include "../../backend/Module5_ActiveContours/ShapeAnalytics.h"
+#include "../../backend/Module5_ActiveContours/GreedySnake.h"
+#include "../../backend/Module5_ActiveContours/ShapeAnalytics.h"
 
 AppController::AppController(MainWindow* window, QObject *parent)
     : QObject(parent), mainWindow(window) {
@@ -134,18 +134,13 @@ void AppController::handleApply() {
             cv::Mat resultImg = currentImg.clone();
             QString analyticsHtml;
 
+            // Grab the user's manual points from the UI to seed the initial snake contour
+            std::vector<cv::Point> initialPoints = inputs[0]->getClickedPoints();
+
             // --- WHEN READY, UNCOMMENT THIS: ---
-            // std::vector<cv::Point> finalContour = GreedySnake::evolve(resultImg, alpha, beta, gamma, iter);
-            // analyticsHtml = ShapeAnalytics::generateReport(finalContour);
+            std::vector<cv::Point> finalContour = GreedySnake::evolve(resultImg, alpha, beta, gamma, iter, initialPoints);
+            analyticsHtml = ShapeAnalytics::generateReport(finalContour);
             
-            // --- PLACEHOLDER (REMOVE WHEN READY): ---
-            QMessageBox::information(mainWindow, "Module 5", "Active Contours (Snakes) is currently under construction by Member 5.");
-            analyticsHtml = R"(
-                <div style='background:#FFFFFF; border:1px solid #E6E0F7; border-radius:12px; padding:14px; font-family:sans-serif;'>
-                    <h3 style='color:#2C2825; margin:0 0 4px;'>Analytics (Placeholder)</h3>
-                    <p style='color:#7A7268; font-size:12px;'>Waiting for Member 5's backend logic to populate this data...</p>
-                </div>
-            )";
             // ----------------------------------------
 
             if (!outputs.isEmpty()) outputs[0]->displayImage(resultImg);
