@@ -1,18 +1,15 @@
 #include <QApplication>
 #include <QFontDatabase>
 #include "frontend/MainWindow.h"
+#include "backend/Module2_HoughLines/HoughLines.h" // Added your module
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
-
-    // Enable high DPI rendering
     app.setAttribute(Qt::AA_UseHighDpiPixmaps);
 
-    // Load Google Fonts fallbacks via system
     QFont appFont("DM Sans", 13);
     appFont.setHintingPreference(QFont::PreferFullHinting);
     app.setFont(appFont);
-
     QString styleSheet = R"(
         /* ═══════════════════════════════════════════════
            VISION STUDIO — LIGHT PALETTE UI THEME
@@ -126,12 +123,13 @@ int main(int argc, char *argv[]) {
         QLabel#helpBubble:hover { background-color: #5B4FCF; color: #FFFFFF; }
     )";
 
+
     app.setStyleSheet(styleSheet);
+
 
     MainWindow window;
     window.setWindowTitle("Vision Studio — Task 2: Hough & Active Contours");
     window.resize(1440, 900);
-    window.setMinimumSize(1100, 700);
     window.show();
 
     return app.exec();
