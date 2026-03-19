@@ -14,7 +14,7 @@
 #include <QTimer>
 #include "components/TopTaskBar.h"
 #include "components/ImagePanel.h"
-
+#include "backend/Module2_HoughLines/HoughLines.h" 
 class AppController;
 
 namespace Ui { class MainWindow; }
