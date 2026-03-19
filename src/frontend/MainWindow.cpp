@@ -1,10 +1,12 @@
 #include "MainWindow.h"
 #include "controllers/AppController.h"
+#include "backend/Module2_HoughLines/HoughLines.h" // Added your module include
 #include <QApplication>
 #include <QScreen>
 #include <QFrame>
 #include <QScrollArea>
 #include <QGridLayout>
+#include <QStyle>
 
 // ── Task 2 metadata ──────────────────────────────────────────────────────────
 struct TaskMeta {
@@ -315,13 +317,13 @@ void MainWindow::updateLayoutForTask(int taskIndex) {
     }
 
     // Adapt layout for Task 2 specifications
-    if (taskIndex == 1) {
+    if (taskIndex == 1) { // Canny Edge
         rebuildPanels(1, 1, {"Source Image"}, {"Binary Edge Map"});
-    } else if (taskIndex == 2 || taskIndex == 3 || taskIndex == 4) {
-        // Hough tasks superimpose over the original image
+    } else if (taskIndex == 2) { // Member 2 Task: Hough Lines
+        rebuildPanels(1, 1, {"Source Image"}, {"Lines Detection Overlay"});
+    } else if (taskIndex == 3 || taskIndex == 4) { // Other Hough transforms
         rebuildPanels(1, 1, {"Source Image"}, {"Detection Overlay"});
-    } else if (taskIndex == 5) {
-        // Active contours task triggers the Analytics Sidebar
+    } else if (taskIndex == 5) { // Active contours task triggers the Analytics Sidebar
         rebuildPanels(1, 1, {"Source Image"}, {"Evolved Contour"});
         infoSidebar->show();
         infoSidebar->setHtml(R"(
