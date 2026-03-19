@@ -1,132 +1,24 @@
-#include "AppController.h"
+#ifndef APPCONTROLLER_H
+#define APPCONTROLLER_H
+
+#include <QObject>
 #include "../MainWindow.h"
-#include "../components/TopTaskBar.h"
-#include "../components/ImagePanel.h"
-#include "../components/ParameterBox.h"
+#include "ImageStateManager.h"
 
-#include <QFileDialog>
-#include <QFileInfo>
-#include <QMessageBox>
-#include <QSlider>
-#include <QSpinBox>
-#include <QComboBox>
+class AppController : public QObject {
+    Q_OBJECT
+public:
+    AppController(MainWindow* window, QObject *parent = nullptr);
 
-// ── TASK 2 BACKEND IMPORTS ────────────────────────────────────
-#include "../../backend/Module1_CannyEdge/CannyDetector.h"
-#include "../../backend/Module2_HoughLines/HoughLines.h"       // UNCOMMENTED
-// #include "../../backend/Module3_HoughCircles/HoughCircles.h"
-// #include "../../backend/Module4_HoughEllipses/HoughEllipses.h"
-#include "../../backend/Module5_ActiveContours/GreedySnake.h"
-#include "../../backend/Module5_ActiveContours/ShapeAnalytics.h"
+private slots:
+    void handleTaskChange(int taskIndex);
+    void handleApply();
+    void handleSave();
+    void handleClear();
 
-AppController::AppController(MainWindow* window, QObject *parent)
-    : QObject(parent), mainWindow(window) {
-    connect(mainWindow->getTopTaskBar(), &TopTaskBar::taskChanged,   this, &AppController::handleTaskChange);
-    connect(mainWindow->getTopTaskBar(), &TopTaskBar::applyRequested, this, &AppController::handleApply);
-    connect(mainWindow->getTopTaskBar(), &TopTaskBar::clearRequested, this, &AppController::handleClear);
-    connect(mainWindow->getTopTaskBar(), &TopTaskBar::saveRequested,  this, &AppController::handleSave);
-}
+private:
+    MainWindow* mainWindow;
+    ImageStateManager stateManager;
+};
 
-void AppController::handleTaskChange(int taskIndex) {
-    mainWindow->updateLayoutForTask(taskIndex);
-}
-
-void AppController::handleApply() {
-    int taskIndex = mainWindow->getTopTaskBar()->getSelectedOperation();
-    auto& inputs  = mainWindow->getInputPanels();
-    auto& outputs = mainWindow->getOutputPanels();
-
-    if (inputs.isEmpty() || inputs[0]->getImage().empty()) {
-        mainWindow->setStatusMessage("No image loaded!", false);
-        return;
-    }
-
-    mainWindow->getTopTaskBar()->setProcessing(true);
-    cv::Mat currentImg = inputs[0]->getImage();
-    ParameterBox* pBox = mainWindow->getTopTaskBar()->getParameterBox();
-
-    try {
-        // ── MODULE 1: CANNY EDGE DETECTOR (FROM SCRATCH) ─────────
-        if (taskIndex == 1) {
-            int lowT = 50, highT = 150;
-            if (auto* s = pBox->findChild<QSpinBox*>("cannyLow"))  lowT  = s->value();
-            if (auto* s = pBox->findChild<QSpinBox*>("cannyHigh")) highT = s->value();
-
-            CannyDetector ed;
-            cv::Mat result = ed.cannyHandmade(currentImg, lowT, highT);
-            if (!outputs.isEmpty()) outputs[0]->displayImage(result);
-        }
-
-        // ── MODULE 2: HOUGH LINES ────────────────────────────────
-        else if (taskIndex == 2) {
-            int thresh = 100;
-            // Get threshold from the UI spinbox
-            if (auto* s = pBox->findChild<QSpinBox*>("houghLineThresh")) thresh = s->value();
-
-            // CALL YOUR MODULE HERE
-            cv::Mat result = HoughLines::detect(currentImg, thresh);
-
-            if (!outputs.isEmpty()) outputs[0]->displayImage(result);
-        }
-
-        // ── MODULE 3: HOUGH CIRCLES ──────────────────────────────
-        else if (taskIndex == 3) {
-            cv::Mat result = currentImg.clone();
-            QMessageBox::information(mainWindow, "Module 3", "Hough Circles is currently under construction.");
-            if (!outputs.isEmpty()) outputs[0]->displayImage(result);
-        }
-
-        // ── MODULE 4: HOUGH ELLIPSES ─────────────────────────────
-        else if (taskIndex == 4) {
-            cv::Mat result = currentImg.clone();
-            QMessageBox::information(mainWindow, "Module 4", "Hough Ellipses is currently under construction.");
-            if (!outputs.isEmpty()) outputs[0]->displayImage(result);
-        }
-
-        // ── MODULE 5: ACTIVE CONTOURS & ANALYTICS ────────────────
-        else if (taskIndex == 5) {
-            float alpha = 1.0f, beta = 1.0f, gamma = 1.0f;
-            int iter = 100;
-
-            if (auto* s = pBox->findChild<QSlider*>("snakeAlpha")) alpha = s->value() / 10.0f;
-            if (auto* s = pBox->findChild<QSlider*>("snakeBeta"))  beta  = s->value() / 10.0f;
-            if (auto* s = pBox->findChild<QSlider*>("snakeGamma")) gamma = s->value() / 10.0f;
-            if (auto* s = pBox->findChild<QSpinBox*>("snakeIter")) iter  = s->value();
-            
-            cv::Mat resultImg = currentImg.clone();
-            std::vector<cv::Point> initialPoints = inputs[0]->getClickedPoints();
-
-            std::vector<cv::Point> finalContour = GreedySnake::evolve(resultImg, alpha, beta, gamma, iter, initialPoints);
-            QString analyticsHtml = ShapeAnalytics::generateReport(finalContour);
-            
-            if (!outputs.isEmpty()) outputs[0]->displayImage(resultImg);
-            if (mainWindow->getInfoSidebar()) {
-                mainWindow->getInfoSidebar()->setHtml(analyticsHtml);
-            }
-        }
-        
-        mainWindow->setStatusMessage("Done ✓", true);
-
-    } catch (const std::exception& e) {
-        mainWindow->setStatusMessage("Processing Failed", false);
-        QMessageBox::critical(mainWindow, "Backend Error", QString(e.what()));
-    }
-
-    mainWindow->getTopTaskBar()->setProcessing(false);
-}
-
-void AppController::handleClear() {
-    for (auto* panel : mainWindow->getOutputPanels()) panel->clear();
-    mainWindow->setStatusMessage("Outputs Cleared", true);
-}
-
-void AppController::handleSave() {
-    auto& outputs = mainWindow->getOutputPanels();
-    if (outputs.isEmpty() || outputs[0]->getImage().empty()) return;
-
-    QString fileName = QFileDialog::getSaveFileName(mainWindow, "Save Image", "", "PNG (*.png);;JPG (*.jpg)");
-    if (!fileName.isEmpty()) {
-        cv::imwrite(fileName.toStdString(), outputs[0]->getImage());
-        mainWindow->setStatusMessage("Saved ✓", true);
-    }
-}
+#endif // APPCONTROLLER_H
