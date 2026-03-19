@@ -15,7 +15,7 @@
 // INSTRUCTION: Uncomment these lines ONLY when your team actually 
 // creates the files in their backend folders.
 
-// #include "../../backend/Module1_CannyEdge/CannyDetector.h"
+ #include "../../backend/Module1_CannyEdge/CannyDetector.h"
 // #include "../../backend/Module2_HoughLines/HoughLines.h"
 // #include "../../backend/Module3_HoughCircles/HoughCircles.h"
 // #include "../../backend/Module4_HoughEllipses/HoughEllipses.h"
@@ -48,25 +48,22 @@ void AppController::handleApply() {
     cv::Mat currentImg = inputs[0]->getImage();
     ParameterBox* pBox = mainWindow->getTopTaskBar()->getParameterBox();
 
-    try {
+     
         // ── MODULE 1: CANNY EDGE DETECTOR (FROM SCRATCH) ─────────
+         try {
+        
         if (taskIndex == 1) {
             int lowT = 50, highT = 150;
-            if (auto* s = pBox->findChild<QSpinBox*>("cannyLow")) lowT = s->value();
+            if (auto* s = pBox->findChild<QSpinBox*>("cannyLow"))  lowT  = s->value();
             if (auto* s = pBox->findChild<QSpinBox*>("cannyHigh")) highT = s->value();
 
             cv::Mat result;
-
-            // --- WHEN READY, UNCOMMENT THIS: ---
-            // result = CannyDetector::apply(currentImg, lowT, highT);
-            
-            // --- PLACEHOLDER (REMOVE WHEN READY): ---
-            result = currentImg.clone();
-            QMessageBox::information(mainWindow, "Module 1", "The Canny Edge Detector is currently under construction by Member 1.");
-            // ----------------------------------------
+            CannyDetector ed;
+            result = ed.cannyHandmade(currentImg, lowT, highT);
 
             if (!outputs.isEmpty()) outputs[0]->displayImage(result);
         }
+
 
         // ── MODULE 2: HOUGH LINES ────────────────────────────────
         else if (taskIndex == 2) {
