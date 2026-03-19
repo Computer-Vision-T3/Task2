@@ -12,11 +12,8 @@
 #include <QComboBox>
 
 // ── TASK 2 BACKEND IMPORTS ────────────────────────────────────
-// INSTRUCTION: Uncomment these lines ONLY when your team actually 
-// creates the files in their backend folders.
-
- #include "../../backend/Module1_CannyEdge/CannyDetector.h"
-// #include "../../backend/Module2_HoughLines/HoughLines.h"
+#include "../../backend/Module1_CannyEdge/CannyDetector.h"
+#include "../../backend/Module2_HoughLines/HoughLines.h"       // UNCOMMENTED
 // #include "../../backend/Module3_HoughCircles/HoughCircles.h"
 // #include "../../backend/Module4_HoughEllipses/HoughEllipses.h"
 #include "../../backend/Module5_ActiveContours/GreedySnake.h"
@@ -48,73 +45,41 @@ void AppController::handleApply() {
     cv::Mat currentImg = inputs[0]->getImage();
     ParameterBox* pBox = mainWindow->getTopTaskBar()->getParameterBox();
 
-     
+    try {
         // ── MODULE 1: CANNY EDGE DETECTOR (FROM SCRATCH) ─────────
-         try {
-        
         if (taskIndex == 1) {
             int lowT = 50, highT = 150;
             if (auto* s = pBox->findChild<QSpinBox*>("cannyLow"))  lowT  = s->value();
             if (auto* s = pBox->findChild<QSpinBox*>("cannyHigh")) highT = s->value();
 
-            cv::Mat result;
             CannyDetector ed;
-            result = ed.cannyHandmade(currentImg, lowT, highT);
-
+            cv::Mat result = ed.cannyHandmade(currentImg, lowT, highT);
             if (!outputs.isEmpty()) outputs[0]->displayImage(result);
         }
-
 
         // ── MODULE 2: HOUGH LINES ────────────────────────────────
         else if (taskIndex == 2) {
             int thresh = 100;
+            // Get threshold from the UI spinbox
             if (auto* s = pBox->findChild<QSpinBox*>("houghLineThresh")) thresh = s->value();
 
-            cv::Mat result;
-
-            // --- WHEN READY, UNCOMMENT THIS: ---
-            // result = HoughLines::detect(currentImg, thresh);
-
-            // --- PLACEHOLDER (REMOVE WHEN READY): ---
-            result = currentImg.clone();
-            QMessageBox::information(mainWindow, "Module 2", "Hough Lines is currently under construction by Member 2.");
-            // ----------------------------------------
+            // CALL YOUR MODULE HERE
+            cv::Mat result = HoughLines::detect(currentImg, thresh);
 
             if (!outputs.isEmpty()) outputs[0]->displayImage(result);
         }
 
         // ── MODULE 3: HOUGH CIRCLES ──────────────────────────────
         else if (taskIndex == 3) {
-            int minR = 10, maxR = 50, thresh = 100;
-            if (auto* s = pBox->findChild<QSpinBox*>("circleMinR")) minR = s->value();
-            if (auto* s = pBox->findChild<QSpinBox*>("circleMaxR")) maxR = s->value();
-            if (auto* s = pBox->findChild<QSpinBox*>("circleThresh")) thresh = s->value();
-
-            cv::Mat result;
-
-            // --- WHEN READY, UNCOMMENT THIS: ---
-            // result = HoughCircles::detect(currentImg, minR, maxR, thresh);
-
-            // --- PLACEHOLDER (REMOVE WHEN READY): ---
-            result = currentImg.clone();
-            QMessageBox::information(mainWindow, "Module 3", "Hough Circles is currently under construction by Member 3.");
-            // ----------------------------------------
-
+            cv::Mat result = currentImg.clone();
+            QMessageBox::information(mainWindow, "Module 3", "Hough Circles is currently under construction.");
             if (!outputs.isEmpty()) outputs[0]->displayImage(result);
         }
 
         // ── MODULE 4: HOUGH ELLIPSES ─────────────────────────────
         else if (taskIndex == 4) {
-            cv::Mat result;
-
-            // --- WHEN READY, UNCOMMENT THIS: ---
-            // result = HoughEllipses::detect(currentImg);
-
-            // --- PLACEHOLDER (REMOVE WHEN READY): ---
-            result = currentImg.clone();
-            QMessageBox::information(mainWindow, "Module 4", "Hough Ellipses is currently under construction by Member 4.");
-            // ----------------------------------------
-
+            cv::Mat result = currentImg.clone();
+            QMessageBox::information(mainWindow, "Module 4", "Hough Ellipses is currently under construction.");
             if (!outputs.isEmpty()) outputs[0]->displayImage(result);
         }
 
@@ -129,17 +94,11 @@ void AppController::handleApply() {
             if (auto* s = pBox->findChild<QSpinBox*>("snakeIter")) iter  = s->value();
             
             cv::Mat resultImg = currentImg.clone();
-            QString analyticsHtml;
-
-            // Grab the user's manual points from the UI to seed the initial snake contour
             std::vector<cv::Point> initialPoints = inputs[0]->getClickedPoints();
 
-            // --- WHEN READY, UNCOMMENT THIS: ---
             std::vector<cv::Point> finalContour = GreedySnake::evolve(resultImg, alpha, beta, gamma, iter, initialPoints);
-            analyticsHtml = ShapeAnalytics::generateReport(finalContour);
+            QString analyticsHtml = ShapeAnalytics::generateReport(finalContour);
             
-            // ----------------------------------------
-
             if (!outputs.isEmpty()) outputs[0]->displayImage(resultImg);
             if (mainWindow->getInfoSidebar()) {
                 mainWindow->getInfoSidebar()->setHtml(analyticsHtml);
@@ -150,57 +109,24 @@ void AppController::handleApply() {
 
     } catch (const std::exception& e) {
         mainWindow->setStatusMessage("Processing Failed", false);
-        QMessageBox::critical(mainWindow, "Backend Error", 
-            QString("An error occurred in the image processing module:\n\n%1").arg(e.what()));
-    } catch (...) {
-        mainWindow->setStatusMessage("Processing Failed", false);
+        QMessageBox::critical(mainWindow, "Backend Error", QString(e.what()));
     }
 
     mainWindow->getTopTaskBar()->setProcessing(false);
 }
 
 void AppController::handleClear() {
-    for (auto* panel : mainWindow->getOutputPanels()) {
-        panel->clear();
-    }
+    for (auto* panel : mainWindow->getOutputPanels()) panel->clear();
     mainWindow->setStatusMessage("Outputs Cleared", true);
 }
 
 void AppController::handleSave() {
     auto& outputs = mainWindow->getOutputPanels();
-    if (outputs.isEmpty() || outputs[0]->getImage().empty()) {
-        mainWindow->setStatusMessage("Nothing to save", false);
-        return;
-    }
+    if (outputs.isEmpty() || outputs[0]->getImage().empty()) return;
 
-    QString filter = "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;BMP Image (*.bmp)";
-    QString selectedFilter;
-    QString fileName = QFileDialog::getSaveFileName(
-        mainWindow, "Save Processed Image", "", filter, &selectedFilter
-    );
-
+    QString fileName = QFileDialog::getSaveFileName(mainWindow, "Save Image", "", "PNG (*.png);;JPG (*.jpg)");
     if (!fileName.isEmpty()) {
-        if (QFileInfo(fileName).suffix().isEmpty()) {
-            if (selectedFilter.contains("*.jpg") || selectedFilter.contains("*.jpeg")) {
-                fileName += ".jpg";
-            } else if (selectedFilter.contains("*.bmp")) {
-                fileName += ".bmp";
-            } else {
-                fileName += ".png";
-            }
-        }
-
-        try {
-            bool ok = cv::imwrite(fileName.toStdString(), outputs[0]->getImage());
-            if (ok) {
-                mainWindow->setStatusMessage("Saved ✓", true);
-            } else {
-                mainWindow->setStatusMessage("Save failed", false);
-                QMessageBox::critical(mainWindow, "Save Error", "Could not write the file. Check your file path and permissions.");
-            }
-        } catch (const cv::Exception& e) {
-            mainWindow->setStatusMessage("Save failed", false);
-            QMessageBox::critical(mainWindow, "Save Error", QString("OpenCV encountered an error while saving:\n%1").arg(e.what()));
-        }
+        cv::imwrite(fileName.toStdString(), outputs[0]->getImage());
+        mainWindow->setStatusMessage("Saved ✓", true);
     }
 }
