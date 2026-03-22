@@ -6,7 +6,11 @@
 using namespace cv;
 
 cv::Mat CannyDetector::apply(cv::Mat img, int lowThresh, int highThresh) {
-    if (img.empty()) return img;
+    if (img.empty() || img.rows < 5 || img.cols < 5)
+    return Mat();
+
+if (lowThresh > highThresh)
+    std::swap(lowThresh, highThresh);
     Mat gray;
     if (img.channels() > 1) cvtColor(img, gray, COLOR_BGR2GRAY);
     else gray = img.clone();
