@@ -3,155 +3,117 @@
 #include <cmath>
 #include <algorithm>
 
-cv::Mat HoughEllipses::detect(cv::Mat img, int minMajor, int maxMajor, int minVotes, int cannyLow, int cannyHigh)
-{
-    // 1. Create a color copy for drawing output
-    cv::Mat outputImg = img.clone();
-    if (outputImg.channels() == 1)
-    {
-        cv::cvtColor(outputImg, outputImg, cv::COLOR_GRAY2BGR);
-    }
+cv::Mat HoughEllipses::detect(cv::Mat src, cv::Mat canvas, int minMajor, int maxMajor, int minVotes) {
+    if (src.empty()) return canvas;
 
-    // 2. Convert to Grayscale
-    cv::Mat gray;
-    if (img.channels() == 3)
-    {
-        cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
-    }
-    else
-    {
-        gray = img.clone();
-    }
+    cv::Mat gray, edges;
+    if (src.channels() > 1) cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+    else gray = src.clone();
 
-    // 3. Blur and Canny Edge Detection using parameters from the .h file
-    cv::Mat blurred, edges;
-    cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0);
-    cv::Canny(blurred, edges, cannyLow, cannyHigh);
+    // 1. Clean Pre-processing
+    cv::GaussianBlur(gray, gray, cv::Size(5, 5), 1.2);
+    cv::Canny(gray, edges, 50, 150);
 
-    // 4. Extract all edge pixels into a list
-    std::vector<cv::Point> edgePoints;
-    for (int y = 0; y < edges.rows; y++)
-    {
-        for (int x = 0; x < edges.cols; x++)
-        {
-            if (edges.at<uchar>(y, x) > 0)
-            {
-                edgePoints.push_back(cv::Point(x, y));
-            }
+    std::vector<cv::Point> edgePts;
+    for (int y = 0; y < edges.rows; y++) {
+        for (int x = 0; x < edges.cols; x++) {
+            if (edges.at<uchar>(y, x) > 0) edgePts.push_back(cv::Point(x, y));
         }
     }
 
-    // 5. SUBSAMPLING (CRITICAL FOR PERFORMANCE)
-    // The Xie-Ji algorithm is incredibly slow (O(N^3)). We must reduce the points
-    // to prevent the app from freezing indefinitely. We limit it to ~300 points.
-    std::vector<cv::Point> sampledEdges;
-    int step = std::max(1, (int)(edgePoints.size() / 300));
-    for (size_t i = 0; i < edgePoints.size(); i += step)
-    {
-        sampledEdges.push_back(edgePoints[i]);
+    // Limit points for performance, but use enough for accuracy
+    std::vector<cv::Point> sampled;
+    int target = 400; 
+    int step = std::max(1, (int)(edgePts.size() / target));
+    for (size_t i = 0; i < edgePts.size() && sampled.size() < target; i += step) {
+        sampled.push_back(edgePts[i]);
     }
 
-    // 6. Handle the default maxMajor value (0 means half the image size)
-    if (maxMajor <= 0)
-    {
-        maxMajor = std::min(img.cols, img.rows) / 2;
-    }
+    if (maxMajor <= 0) maxMajor = std::max(edges.cols, edges.rows);
 
-    // Structure to hold our surviving ellipses
-    struct EllipseData
-    {
-        cv::Point2f center;
-        float a, b, angle;
-    };
-    std::vector<EllipseData> detectedEllipses;
+    struct ElData { cv::Point2f c; float a, b, ang; float score; };
+    std::vector<ElData> candidates;
 
-    // 7. THE XIE-JI ALGORITHM
-    int N = sampledEdges.size();
-
-    // Loop through every pair of points (Assume they are the major axis endpoints)
-    for (int i = 0; i < N - 1; i++)
-    {
-        for (int j = i + 1; j < N; j++)
-        {
-            cv::Point2f p1 = sampledEdges[i];
-            cv::Point2f p2 = sampledEdges[j];
-
-            // Calculate distance between points (which equals 2 * major axis 'a')
-            float dx = p2.x - p1.x;
-            float dy = p2.y - p1.y;
-            float dist = std::sqrt(dx * dx + dy * dy);
+    int N = sampled.size();
+    for (int i = 0; i < N; i++) {
+        for (int j = i + 1; j < N; j++) {
+            cv::Point2f p1 = sampled[i], p2 = sampled[j];
+            float dist = cv::norm(p1 - p2);
             float a = dist / 2.0f;
+            if (a < minMajor || a > maxMajor) continue;
 
-            // Reject if the axis isn't the size we want
-            if (a < minMajor || a > maxMajor)
-                continue;
+            cv::Point2f center = (p1 + p2) * 0.5f;
+            float angle = std::atan2(p2.y - p1.y, p2.x - p1.x);
+            float cosA = std::cos(angle), sinA = std::sin(angle);
 
-            // Calculate center and angle
-            cv::Point2f center((p1.x + p2.x) / 2.0f, (p1.y + p2.y) / 2.0f);
-            float angle = std::atan2(dy, dx);
+            std::vector<int> b_acc(std::ceil(a) + 1, 0);
+            for (int k = 0; k < N; k++) {
+                if (k == i || k == j) continue;
+                float dx = sampled[k].x - center.x, dy = sampled[k].y - center.y;
+                if (std::sqrt(dx*dx + dy*dy) >= a) continue;
 
-            // 1D Accumulator for the minor axis 'b' (Max 'b' is 'a', making a circle)
-            int maxB = std::ceil(a);
-            std::vector<int> accumulator(maxB + 1, 0);
+                float u = std::abs(dx * cosA + dy * sinA);
+                float v = std::abs(-dx * sinA + dy * cosA);
+                float b2 = (a*a * v*v) / (a*a - u*u + 0.00001f);
+                if (b2 > 0) {
+                    int b = cvRound(std::sqrt(b2));
+                    if (b > 5 && b <= a) b_acc[b]++;
+                }
+            }
 
-            // Loop through all OTHER points to vote on 'b'
-            for (int k = 0; k < N; k++)
-            {
-                if (k == i || k == j)
-                    continue;
-                cv::Point2f p3 = sampledEdges[k];
+            auto it = std::max_element(b_acc.begin(), b_acc.end());
+            int votes = *it, bestB = std::distance(b_acc.begin(), it);
 
-                // Translate point to center and rotate it to match the axis
-                float px = p3.x - center.x;
-                float py = p3.y - center.y;
-                float u = px * std::cos(angle) + py * std::sin(angle);
-                float v = -px * std::sin(angle) + py * std::cos(angle);
-
-                // Point must be inside the bounds of the major axis
-                if (std::abs(u) >= a)
-                    continue;
-
-                // Xie-Ji Geometric Formula to calculate the minor axis 'b'
-                float b_sq = (a * a * v * v) / (a * a - u * u);
-
-                if (b_sq > 0)
-                {
-                    int b = std::round(std::sqrt(b_sq));
-                    // If it's a valid 'b', cast a vote!
-                    if (b > 0 && b <= maxB)
-                    {
-                        accumulator[b]++;
+            // --- IMPROVED VERIFICATION ---
+            if (votes >= minVotes) {
+                int hits = 0, total = 40;
+                for (int t = 0; t < 360; t += (360/total)) {
+                    float rad = t * CV_PI / 180.0f;
+                    // Note: OpenCV uses a and b for half-axes
+                    float ex = a * std::cos(rad), ey = bestB * std::sin(rad);
+                    int rx = cvRound(center.x + (ex * cosA - ey * sinA));
+                    int ry = cvRound(center.y + (ex * sinA + ey * cosA));
+                    
+                    if (rx >= 0 && rx < edges.cols && ry >= 0 && ry < edges.rows) {
+                        bool foundLocal = false;
+                        for(int dy_f=-1; dy_f<=1 && !foundLocal; dy_f++)
+                            for(int dx_f=-1; dx_f<=1; dx_f++)
+                                if (edges.at<uchar>(std::max(0,std::min(ry+dy_f, edges.rows-1)), 
+                                                   std::max(0,std::min(rx+dx_f, edges.cols-1))) > 0) 
+                                { foundLocal = true; break; }
+                        if (foundLocal) hits++;
                     }
                 }
-            }
-
-            // Find the highest voted 'b'
-            int maxVote = 0;
-            int bestB = 0;
-            for (int b = 1; b <= maxB; b++)
-            {
-                if (accumulator[b] > maxVote)
-                {
-                    maxVote = accumulator[b];
-                    bestB = b;
-                }
-            }
-
-            // If it received enough votes, and isn't just a flat line, keep it!
-            if (maxVote >= minVotes && bestB >= 5)
-            {
-                // Convert angle back to degrees for drawing
-                float angleDegrees = angle * 180.0f / (float)CV_PI;
-                detectedEllipses.push_back({center, a, (float)bestB, angleDegrees});
+                float score = (float)hits / total;
+                if (score > 0.6) candidates.push_back({center, a, (float)bestB, (float)(angle * 180/CV_PI), score});
             }
         }
     }
 
-    // 8. Draw the detected ellipses
-    for (const auto &el : detectedEllipses)
-    {
-        cv::ellipse(outputImg, el.center, cv::Size(el.a, el.b), el.angle, 0, 360, cv::Scalar(0, 255, 0), 2);
+    // --- AGGRESSIVE CLUSTERING (Fixes the messy overlap) ---
+    std::sort(candidates.begin(), candidates.end(), [](const ElData& x, const ElData& y) { 
+        return x.score > y.score; 
+    });
+    
+    cv::Mat output = canvas.clone();
+    std::vector<ElData> finalSelection;
+
+    for (const auto& e : candidates) {
+        bool duplicate = false;
+        for (const auto& f : finalSelection) {
+            float distCenter = cv::norm(e.c - f.c);
+            float diffSize = std::abs(e.a - f.a) + std::abs(e.b - f.b);
+            // If centers are closer than 30px and sizes are similar, ignore the weaker one
+            if (distCenter < 40 && diffSize < 30) { 
+                duplicate = true; break; 
+            }
+        }
+        if (!duplicate) {
+            cv::ellipse(output, e.c, cv::Size(e.a, e.b), e.ang, 0, 360, cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
+            finalSelection.push_back(e);
+            if (finalSelection.size() >= 10) break; // Maximum ellipses to detect
+        }
     }
 
-    return outputImg;
+    return output;
 }
