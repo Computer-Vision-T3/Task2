@@ -69,14 +69,31 @@ void AppController::handleApply(int taskIndexOverride) {
         // --- MODULE 1: CANNY ---
         if (taskIndex == 1) {
             int low = 50, high = 150;
-            if (auto* s = pBox->findChild<QSpinBox*>("cannyLow")) low = s->value();
-            if (auto* s = pBox->findChild<QSpinBox*>("cannyHigh")) high = s->value();
+            QSpinBox* lowBox = pBox->findChild<QSpinBox*>("cannyLow");
+            QSpinBox* highBox = pBox->findChild<QSpinBox*>("cannyHigh");
+            
+            if (lowBox) low = lowBox->value();
+            if (highBox) high = highBox->value();
+
+            // UI/UX FIX: Warn the user and swap the UI elements if they are backwards
+            if (low > high) {
+                QMessageBox::information(mainWindow, "Parameter Auto-Correct", 
+                    "The Low Threshold cannot be greater than the High Threshold.\n\n"
+                    "The values have been automatically swapped to maintain mathematical integrity.");
+                
+                // Swap the values physically in the UI so the user sees the correction
+                if (lowBox) lowBox->setValue(high);
+                if (highBox) highBox->setValue(low);
+                
+                // Swap the variables for the backend function
+                std::swap(low, high);
+            }
+
             result = CannyDetector::apply(originalImg, low, high);
         }
         // --- MODULE 2: HOUGH LINES ---
         else if (taskIndex == 2) {
             int thresh = 100; // Default
-            // Only read from UI if the widget actually exists (safe check)
             if (auto* s = pBox->findChild<QSpinBox*>("houghLineThresh")) thresh = s->value();
             result = HoughLines::detect(originalImg, currentCanvas, thresh);
         }
@@ -93,7 +110,6 @@ void AppController::handleApply(int taskIndexOverride) {
             int minMaj = 20, votes = 8; // Defaults
             if (auto* s = pBox->findChild<QSpinBox*>("ellipMinMaj")) minMaj = s->value();
             if (auto* s = pBox->findChild<QSpinBox*>("ellipVotes")) votes = s->value();
-            // Call the ellipse detect function
             result = HoughEllipses::detect(originalImg, currentCanvas, minMaj, 0, votes);
         }
         // --- MODULE 5: ACTIVE CONTOURS ---
@@ -107,19 +123,16 @@ void AppController::handleApply(int taskIndexOverride) {
             if (auto* s = pBox->findChild<QSpinBox*>("snakeIter")) iter  = s->value();
             
             result = currentCanvas.clone();
-            
-            // Grab the user's manual points from the UI
             std::vector<cv::Point> initialPoints = inputs[0]->getClickedPoints();
 
-            // Evolve the snake and generate the HTML report
             std::vector<cv::Point> finalContour = GreedySnake::evolve(result, alpha, beta, gamma, iter, initialPoints);
             QString analyticsHtml = ShapeAnalytics::generateReport(finalContour);
 
-            // Inject the calculated area/perimeter back into the UI sidebar
             if (mainWindow->getInfoSidebar()) {
                 mainWindow->getInfoSidebar()->setHtml(analyticsHtml);
             }
         }
+
         if (!result.empty() && !outputs.isEmpty()) {
             outputs[0]->displayImage(result);
             mainWindow->setStatusMessage("Applied successfully ✓", true);
@@ -131,6 +144,7 @@ void AppController::handleApply(int taskIndexOverride) {
 
     mainWindow->getTopTaskBar()->setProcessing(false);
 }
+
 void AppController::handleClear() {
     for (auto* panel : mainWindow->getOutputPanels()) panel->clear();
     mainWindow->setStatusMessage("Outputs Cleared", true);
