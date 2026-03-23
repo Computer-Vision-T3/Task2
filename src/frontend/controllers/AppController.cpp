@@ -98,10 +98,28 @@ void AppController::handleApply(int taskIndexOverride) {
         }
         // --- MODULE 5: ACTIVE CONTOURS ---
         else if (taskIndex == 5) {
-            // (Keep your existing Task 5 logic here)
-            result = currentCanvas; 
-        }
+            float alpha = 1.0f, beta = 1.0f, gamma = 1.0f;
+            int iter = 100;
 
+            if (auto* s = pBox->findChild<QSlider*>("snakeAlpha")) alpha = s->value() / 10.0f;
+            if (auto* s = pBox->findChild<QSlider*>("snakeBeta"))  beta  = s->value() / 10.0f;
+            if (auto* s = pBox->findChild<QSlider*>("snakeGamma")) gamma = s->value() / 10.0f;
+            if (auto* s = pBox->findChild<QSpinBox*>("snakeIter")) iter  = s->value();
+            
+            result = currentCanvas.clone();
+            
+            // Grab the user's manual points from the UI
+            std::vector<cv::Point> initialPoints = inputs[0]->getClickedPoints();
+
+            // Evolve the snake and generate the HTML report
+            std::vector<cv::Point> finalContour = GreedySnake::evolve(result, alpha, beta, gamma, iter, initialPoints);
+            QString analyticsHtml = ShapeAnalytics::generateReport(finalContour);
+
+            // Inject the calculated area/perimeter back into the UI sidebar
+            if (mainWindow->getInfoSidebar()) {
+                mainWindow->getInfoSidebar()->setHtml(analyticsHtml);
+            }
+        }
         if (!result.empty() && !outputs.isEmpty()) {
             outputs[0]->displayImage(result);
             mainWindow->setStatusMessage("Applied successfully ✓", true);

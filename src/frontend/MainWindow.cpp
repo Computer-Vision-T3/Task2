@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 #include "controllers/AppController.h"
-#include "backend/Module2_HoughLines/HoughLines.h" // Added your module include
+#include "backend/Module2_HoughLines/HoughLines.h"
 #include <QApplication>
 #include <QScreen>
 #include <QFrame>
