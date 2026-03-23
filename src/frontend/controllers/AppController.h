@@ -12,7 +12,11 @@ public:
 
 private slots:
     void handleTaskChange(int taskIndex);
-    void handleApply();
+    
+    // FIXED: Added "int taskIndexOverride = -1" 
+    // This allows it to work for both the main Apply button AND the "Add" buttons
+    void handleApply(int taskIndexOverride = -1);
+    
     void handleSave();
     void handleClear();
 
@@ -21,4 +25,4 @@ private:
     ImageStateManager stateManager;
 };
 
-#endif // APPCONTROLLER_H
+#endif
