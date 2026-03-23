@@ -5,8 +5,8 @@
 
 class HoughLines {
 public:
-    // Required function signature per your project architecture
-    static cv::Mat detect(cv::Mat img, int threshold);
+    // Added cv::Mat canvas to the signature
+    static cv::Mat detect(cv::Mat src, cv::Mat canvas, int threshold);
 };
 
 #endif
