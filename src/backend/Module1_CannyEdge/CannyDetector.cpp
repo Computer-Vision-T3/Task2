@@ -7,77 +7,121 @@ using namespace cv;
 
 cv::Mat CannyDetector::apply(cv::Mat img, int lowThresh, int highThresh) {
     if (img.empty() || img.rows < 5 || img.cols < 5)
-    return Mat();
+        return Mat();
 
-if (lowThresh > highThresh)
-    std::swap(lowThresh, highThresh);
+    if (lowThresh > highThresh)
+        std::swap(lowThresh, highThresh);
+
     Mat gray;
     if (img.channels() > 1) cvtColor(img, gray, COLOR_BGR2GRAY);
     else gray = img.clone();
-    return cannyHandmade(gray, lowThresh, highThresh);
+
+    Mat blurred = applyGaussianBlur(gray);
+    Mat mag, angle;
+    calculateGradients(blurred, mag, angle);
+    Mat suppressed = nonMaximumSuppression(mag, angle);
+    return hysteresis(suppressed, lowThresh, highThresh);
 }
 
-cv::Mat CannyDetector::cannyHandmade(const Mat& image, int low, int high) {
-    // Step 1: Noise reduction
-    // Use a 5x5 Gaussian with sigma=2.0 to smooth noise while preserving
-    // meaningful edges (7x7 was too aggressive and blurred real edges)
-    Mat blurred;
-    GaussianBlur(image, blurred, Size(5, 5), 2.0);
+cv::Mat CannyDetector::applyGaussianBlur(const Mat& input) {
+    // 5x5 Gaussian kernel (sigma ≈ 1.4), sum = 159
+    float kernel[5][5] = {
+        {2,  4,  5,  4,  2},
+        {4,  9, 12,  9,  4},
+        {5, 12, 15, 12,  5},
+        {4,  9, 12,  9,  4},
+        {2,  4,  5,  4,  2}
+    };
+    const float kernelSum = 159.0f;
 
-    // Step 2: Gradient computation using Sobel operators
-    Mat gx, gy, mag;
-    Sobel(blurred, gx, CV_32F, 1, 0, 3);
-    Sobel(blurred, gy, CV_32F, 0, 1, 3);
-    magnitude(gx, gy, mag);
+    Mat output = Mat::zeros(input.size(), CV_32F);
+    Mat padded;
+    copyMakeBorder(input, padded, 2, 2, 2, 2, BORDER_REPLICATE);
 
-    // Step 3: Sub-pixel Non-Maximum Suppression
-    // Interpolates gradient magnitudes between neighbors to produce
-    // perfectly thin 1-pixel-wide edge lines
-    Mat suppressed = Mat::zeros(mag.size(), CV_32F);
-
-    for (int i = 2; i < mag.rows - 2; i++) {
-        for (int j = 2; j < mag.cols - 2; j++) {
-            float x = gx.at<float>(i, j);
-            float y = gy.at<float>(i, j);
-            float M = mag.at<float>(i, j);
-
-            // Skip pixels with negligible gradient magnitude
-            if (M < 1e-4) continue;
-
-            float mag1, mag2;
-            float absX = std::abs(x);
-            float absY = std::abs(y);
-
-            // Interpolate along the gradient direction using Gx/Gy ratio
-            if (absX >= absY) {
-                // Gradient is more horizontal — interpolate left/right neighbors
-                float weight = (absX > 1e-6f) ? absY / absX : 0.0f;
-                int xDir = (x > 0) ? 1 : -1;
-                int diag = (x * y >= 0) ? 1 : -1; // diagonal row direction
-                mag1 = (1 - weight) * mag.at<float>(i,          j + xDir)  +
-                       weight       * mag.at<float>(i + diag,   j + xDir);
-                mag2 = (1 - weight) * mag.at<float>(i,          j - xDir)  +
-                       weight       * mag.at<float>(i - diag,   j - xDir);
-            } else {
-                // Gradient is more vertical — interpolate top/bottom neighbors
-                float weight = (absY > 1e-6f) ? absX / absY : 0.0f;
-                int yDir = (y > 0) ? 1 : -1;
-                int diag = (x * y >= 0) ? 1 : -1; // diagonal column direction
-                mag1 = (1 - weight) * mag.at<float>(i + yDir,   j)         +
-                       weight       * mag.at<float>(i + yDir,   j + diag);
-                mag2 = (1 - weight) * mag.at<float>(i - yDir,   j)         +
-                       weight       * mag.at<float>(i - yDir,   j - diag);
+    for (int i = 0; i < input.rows; i++) {
+        for (int j = 0; j < input.cols; j++) {
+            float sum = 0.0f;
+            for (int ki = -2; ki <= 2; ki++) {
+                for (int kj = -2; kj <= 2; kj++) {
+                    sum += static_cast<float>(padded.at<uchar>(i + ki + 2, j + kj + 2))
+                           * kernel[ki + 2][kj + 2];
+                }
             }
-
-            // Keep only local maxima along the gradient direction
-            if (M >= mag1 && M >= mag2) {
-                suppressed.at<float>(i, j) = M;
-            }
+            output.at<float>(i, j) = sum / kernelSum;
         }
     }
+    return output;
+}
 
-    // Step 4: Hysteresis thresholding to finalize edge connectivity
-    return hysteresis(suppressed, low, high);
+void CannyDetector::calculateGradients(const Mat& input, Mat& magnitude, Mat& angle) {
+    magnitude = Mat::zeros(input.size(), CV_32F);
+    angle     = Mat::zeros(input.size(), CV_8U);
+
+    const int Kx[3][3] = {{-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}};
+    const int Ky[3][3] = {{ 1, 2, 1}, { 0, 0, 0}, {-1,-2,-1}};
+
+    Mat padded;
+    copyMakeBorder(input, padded, 1, 1, 1, 1, BORDER_REPLICATE);
+
+    for (int i = 0; i < input.rows; i++) {
+        for (int j = 0; j < input.cols; j++) {
+            float gx = 0.0f, gy = 0.0f;
+            for (int ki = -1; ki <= 1; ki++) {
+                for (int kj = -1; kj <= 1; kj++) {
+                    float pixel = padded.at<float>(i + ki + 1, j + kj + 1);
+                    gx += pixel * static_cast<float>(Kx[ki + 1][kj + 1]);
+                    gy += pixel * static_cast<float>(Ky[ki + 1][kj + 1]);
+                }
+            }
+            magnitude.at<float>(i, j) = std::sqrt(gx * gx + gy * gy);
+
+            // Angle in degrees, mapped to [0, 180)
+            float theta = std::atan2(gy, gx) * 180.0f / static_cast<float>(CV_PI);
+            if (theta < 0.0f) theta += 180.0f;
+
+            // Quantise to 4 directions: 0, 45, 90, 135
+            uchar dir;
+            if ((theta >= 0.0f && theta < 22.5f) || (theta >= 157.5f && theta < 180.0f))
+                dir = 0;
+            else if (theta >= 22.5f && theta < 67.5f)
+                dir = 45;
+            else if (theta >= 67.5f && theta < 112.5f)
+                dir = 90;
+            else
+                dir = 135;
+
+            angle.at<uchar>(i, j) = dir;
+        }
+    }
+}
+
+cv::Mat CannyDetector::nonMaximumSuppression(const Mat& magnitude, const Mat& angle) {
+    Mat output = Mat::zeros(magnitude.size(), CV_32F);
+
+    for (int i = 1; i < magnitude.rows - 1; i++) {
+        for (int j = 1; j < magnitude.cols - 1; j++) {
+            float q = 255.0f, r = 255.0f;
+            uchar currentAngle = angle.at<uchar>(i, j);
+
+            if (currentAngle == 0) {
+                q = magnitude.at<float>(i, j + 1);
+                r = magnitude.at<float>(i, j - 1);
+            } else if (currentAngle == 45) {
+                q = magnitude.at<float>(i + 1, j - 1);
+                r = magnitude.at<float>(i - 1, j + 1);
+            } else if (currentAngle == 90) {
+                q = magnitude.at<float>(i + 1, j);
+                r = magnitude.at<float>(i - 1, j);
+            } else if (currentAngle == 135) {
+                q = magnitude.at<float>(i - 1, j - 1);
+                r = magnitude.at<float>(i + 1, j + 1);
+            }
+
+            float cur = magnitude.at<float>(i, j);
+            output.at<float>(i, j) = (cur >= q && cur >= r) ? cur : 0.0f;
+        }
+    }
+    return output;
 }
 
 cv::Mat CannyDetector::hysteresis(const Mat& img, int low, int high) {
@@ -85,32 +129,28 @@ cv::Mat CannyDetector::hysteresis(const Mat& img, int low, int high) {
     std::queue<std::pair<int, int>> q;
 
     // First pass: classify pixels as strong (255) or weak (100)
-    // Start from i=1 to leave a 1-pixel border for safe neighbor access
     for (int i = 1; i < img.rows - 1; i++) {
         for (int j = 1; j < img.cols - 1; j++) {
             float val = img.at<float>(i, j);
-            if (val >= high) {
+            if (val >= static_cast<float>(high)) {
                 result.at<uchar>(i, j) = 255;
                 q.push({i, j});
-            } else if (val >= low) {
-                result.at<uchar>(i, j) = 100; // Temporary label for weak pixels
+            } else if (val >= static_cast<float>(low)) {
+                result.at<uchar>(i, j) = 100;
             }
         }
     }
 
-    // 8-connectivity offsets: dr = row offset, dc = column offset
-    int dr[] = {-1, -1, -1,  0,  0,  1,  1,  1};
-    int dc[] = {-1,  0,  1, -1,  1, -1,  0,  1};
+    // 8-connectivity offsets
+    const int dr[] = {-1, -1, -1,  0,  0,  1,  1,  1};
+    const int dc[] = {-1,  0,  1, -1,  1, -1,  0,  1};
 
     // BFS from strong pixels: promote connected weak pixels to strong
     while (!q.empty()) {
         auto [cy, cx] = q.front(); q.pop();
         for (int k = 0; k < 8; k++) {
             int ny = cy + dr[k], nx = cx + dc[k];
-
-            // Bounds check to prevent out-of-bounds memory access
             if (ny < 0 || ny >= result.rows || nx < 0 || nx >= result.cols) continue;
-
             if (result.at<uchar>(ny, nx) == 100) {
                 result.at<uchar>(ny, nx) = 255;
                 q.push({ny, nx});
@@ -118,10 +158,11 @@ cv::Mat CannyDetector::hysteresis(const Mat& img, int low, int high) {
         }
     }
 
-    // Final pass: suppress any remaining isolated weak pixels
+    // Final pass: suppress remaining isolated weak pixels
     for (int i = 0; i < result.rows; i++) {
         for (int j = 0; j < result.cols; j++) {
-            if (result.at<uchar>(i, j) == 100) result.at<uchar>(i, j) = 0;
+            if (result.at<uchar>(i, j) == 100)
+                result.at<uchar>(i, j) = 0;
         }
     }
 

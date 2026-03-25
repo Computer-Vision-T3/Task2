@@ -15,10 +15,10 @@ public:
     static cv::Mat cannyHandmade(const cv::Mat& image, int low, int high);
 
 private:
-    static void sobelGradients(const cv::Mat& image, cv::Mat& magnitude, cv::Mat& angle);
-    static cv::Mat nonMaxSuppression(const cv::Mat& mag, const cv::Mat& angle);
+    static cv::Mat applyGaussianBlur(const cv::Mat& input);
+    static void calculateGradients(const cv::Mat& input, cv::Mat& magnitude, cv::Mat& angle);
+    static cv::Mat nonMaximumSuppression(const cv::Mat& magnitude, const cv::Mat& angle);
     static cv::Mat hysteresis(const cv::Mat& img, int low, int high);
-    static cv::Mat normalizeInternal(const cv::Mat& img); // Renamed to avoid collision
 };
 
 #endif
